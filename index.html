@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShiftSwap Desk</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --ink: #1a2332;
+      --muted: #5c6778;
+      --accent: #2563a8;
+      --accent-soft: #e8f0fa;
+      --ok: #1f7a4c;
+      --warn: #b45309;
+      --bad: #b42318;
+      --line: #d8dee6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    header {
+      background: var(--ink);
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+    .role-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .role-bar label { font-size: 0.85rem; opacity: 0.9; }
+    select, button, input, textarea {
+      font: inherit;
+    }
+    select, input, textarea {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    button {
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    button.danger { background: var(--bad); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .panel h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: lowercase;
+    }
+    .badge.posted { background: #fef3c7; color: #92400e; }
+    .badge.claimed { background: #dbeafe; color: #1e40af; }
+    .badge.approved { background: #d1fae5; color: #065f46; }
+    .badge.completed { background: #e5e7eb; color: #374151; }
+    .badge.cancelled, .badge.rejected { background: #fee2e2; color: #991b1b; }
+    .badge.open { background: var(--accent-soft); color: var(--accent); }
+    .badge.filled { background: #d1fae5; color: var(--ok); }
+    .badge.swap_pending { background: #ffedd5; color: var(--warn); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: left; vertical-align: top; }
+    th { font-size: 0.8rem; color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .flash {
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .detail-row { margin-bottom: 8px; }
+    .detail-row strong { display: inline-block; min-width: 110px; color: var(--muted); font-weight: 600; }
+    footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ShiftSwap Desk</h1>
+    <div class="role-bar">
+      <label for="roleSelect">View as</label>
+      <select id="roleSelect" aria-label="Role switch">
+        <option value="worker">Student Worker</option>
+        <option value="manager">Shift Manager</option>
+      </select>
+      <select id="userSelect" aria-label="User switch"></select>
+      <button type="button" class="secondary" id="resetBtn">Reset sample data</button>
+    </div>
+  </header>
+  <main>
+    <div id="flash" class="flash" hidden></div>
+    <div class="grid">
+      <section class="panel" id="leftPanel"></section>
+      <section class="panel" id="rightPanel"></section>
+    </div>
+    <section class="panel" style="margin-top:16px" id="detailPanel">
+      <h2>Selected item</h2>
+      <p id="detailEmpty" style="color:var(--muted)">Select a shift or swap request to see details and permitted actions.</p>
+      <div id="detailBody" hidden></div>
+    </section>
+  </main>
+  <footer>ShiftSwap Desk prototype. Ridhi 242950. MBIS4004 A2 Part 2. In-memory demo only.</footer>
+
+  <script>
+    const STORAGE_KEY = "shiftswap_desk_v1";
+
+    const LEGAL_SWAP = {
+      posted: ["claimed", "cancelled"],
+      claimed: ["approved", "rejected", "cancelled"],
+      approved: ["completed"],
+      cancelled: [],
+      rejected: [],
+      completed: []
+    };
+
+    function seedData() {
+      return {
+        users: [
+          { userId: "U001", fullName: "Ridhi Sharma", email: "r242950@campus.edu.au", roleType: "worker", studentId: "242950" },
+          { userId: "U002", fullName: "Sam Okonkwo", email: "s.okonkwo@campus.edu.au", roleType: "worker", studentId: "241102" },
+          { userId: "U003", fullName: "Priya Nair", email: "p.nair@campus.edu.au", roleType: "worker", studentId: "243881" },
+          { userId: "M001", fullName: "James Chen", email: "j.chen@campus.edu.au", roleType: "manager", staffId: "STF014" }
+        ],
+        sites: [
+          { siteId: "S1", buildingLabel: "Building A", zoneName: "Cafe counter" },
+          { siteId: "S2", buildingLabel: "Library", zoneName: "Help desk" },
+          { siteId: "S3", buildingLabel: "Sports centre", zoneName: "Reception" }
+        ],
+        shifts: [
+          { shiftId: "SH01", siteId: "S1", ownerUserId: "U001", workDate: "2026-06-18", startTime: "08:00", endTime: "12:00", status: "filled" },
+          { shiftId: "SH02", siteId: "S2", ownerUserId: "U002", workDate: "2026-06-19", startTime: "13:00", endTime: "17:00", status: "swap_pending" },
+          { shiftId: "SH03", siteId: "S3", ownerUserId: "U003", workDate: "2026-06-20", startTime: "09:00", endTime: "13:00", status: "open" },
+          { shiftId: "SH04", siteId: "S1", ownerUserId: "U001", workDate: "2026-06-22", startTime: "14:00", endTime: "18:00", status: "filled" }
+        ],
+        swaps: [
+          {
+            requestId: "SW01",
+            shiftId: "SH02",
+            ownerUserId: "U002",
+            claimerUserId: "U003",
+            reasonNote: "Exam clash on Thursday afternoon",
+            status: "claimed",
+            postedAt: "2026-06-14T09:15:00",
+            resolvedAt: null
+          }
+        ],
+        selected: { type: null, id: null }
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) { /* ignore */ }
+      return seedData();
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    let state = loadState();
+
+    const roleSelect = document.getElementById("roleSelect");
+    const userSelect = document.getElementById("userSelect");
+    const flashEl = document.getElementById("flash");
+
+    function currentUser() {
+      return state.users.find(u => u.userId === userSelect.value);
+    }
+
+    function isManager() {
+      return roleSelect.value === "manager";
+    }
+
+    function userName(id) {
+      const u = state.users.find(x => x.userId === id);
+      return u ? u.fullName : id;
+    }
+
+    function siteLabel(id) {
+      const s = state.sites.find(x => x.siteId === id);
+      return s ? s.buildingLabel + " / " + s.zoneName : id;
+    }
+
+    function showFlash(msg) {
+      flashEl.textContent = msg;
+      flashEl.hidden = false;
+      setTimeout(() => { flashEl.hidden = true; }, 4000);
+    }
+
+    function canTransitionSwap(from, to) {
+      return (LEGAL_SWAP[from] || []).includes(to);
+    }
+
+    function allowedActionsForSwap(swap) {
+      const user = currentUser();
+      const actions = [];
+      if (!user) return actions;
+
+      if (!isManager()) {
+        if (user.userId === swap.ownerUserId && canTransitionSwap(swap.status, "cancelled")) {
+          actions.push({ id: "cancel", label: "Cancel request" });
+        }
+        if (swap.status === "posted" && user.userId !== swap.ownerUserId) {
+          actions.push({ id: "claim", label: "Claim swap" });
+        }
+      } else {
+        if (swap.status === "claimed") {
+          actions.push({ id: "approve", label: "Approve swap" });
+          actions.push({ id: "reject", label: "Reject swap" });
+        }
+        if (swap.status === "approved") {
+          actions.push({ id: "complete", label: "Mark completed" });
+        }
+      }
+      return actions;
+    }
+
+    function populateUsers() {
+      const role = roleSelect.value;
+      const list = state.users.filter(u => u.roleType === role);
+      userSelect.innerHTML = list.map(u =>
+        `<option value="${u.userId}">${u.fullName}</option>`
+      ).join("");
+    }
+
+    function renderLeft() {
+      const panel = document.getElementById("leftPanel");
+      const user = currentUser();
+      if (!user) return;
+
+      if (!isManager()) {
+        const myShifts = state.shifts.filter(s => s.ownerUserId === user.userId);
+        panel.innerHTML = `
+          <h2>My shifts</h2>
+          <table>
+            <thead><tr><th>Date</th><th>Time</th><th>Site</th><th>Status</th></tr></thead>
+            <tbody>
+              ${myShifts.map(s => `
+                <tr data-select="shift:${s.shiftId}" style="cursor:pointer">
+                  <td>${s.workDate}</td>
+                  <td>${s.startTime}-${s.endTime}</td>
+                  <td>${siteLabel(s.siteId)}</td>
+                  <td><span class="badge ${s.status}">${s.status.replace("_", " ")}</span></td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+          <p style="margin-top:12px;font-size:0.85rem;color:var(--muted)">Select a filled shift to post a swap request.</p>`;
+      } else {
+        panel.innerHTML = `
+          <h2>Work sites</h2>
+          <table>
+            <thead><tr><th>Building</th><th>Zone</th><th>Shifts</th></tr></thead>
+            <tbody>
+              ${state.sites.map(s => {
+                const count = state.shifts.filter(sh => sh.siteId === s.siteId).length;
+                return `<tr><td>${s.buildingLabel}</td><td>${s.zoneName}</td><td>${count}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+          <div style="margin-top:14px">
+            <h2 style="font-size:0.95rem">Add site</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <input id="newBuilding" placeholder="Building" aria-label="Building">
+              <input id="newZone" placeholder="Zone" aria-label="Zone">
+              <button type="button" id="addSiteBtn">Add site</button>
+            </div>
+          </div>`;
+        document.getElementById("addSiteBtn").onclick = () => {
+          const buildingLabel = document.getElementById("newBuilding").value.trim();
+          const zoneName = document.getElementById("newZone").value.trim();
+          if (!buildingLabel || !zoneName) {
+            showFlash("Building and zone are both required.");
+            return;
+          }
+          const siteId = "S" + (state.sites.length + 1);
+          state.sites.push({ siteId, buildingLabel, zoneName });
+          saveState();
+          render();
+          showFlash("Site added.");
+        };
+      }
+    }
+
+    function renderRight() {
+      const panel = document.getElementById("rightPanel");
+      const user = currentUser();
+
+      let swaps = state.swaps.slice();
+      if (!isManager()) {
+        swaps = swaps.filter(sw =>
+          sw.status === "posted" ||
+          sw.ownerUserId === user.userId ||
+          sw.claimerUserId === user.userId
+        );
+      }
+
+      panel.innerHTML = `
+        <h2>${isManager() ? "All swap requests" : "Swap board"}</h2>
+        <table>
+          <thead><tr><th>ID</th><th>Shift</th><th>Owner</th><th>Status</th></tr></thead>
+          <tbody>
+            ${swaps.length ? swaps.map(sw => {
+              const sh = state.shifts.find(s => s.shiftId === sw.shiftId);
+              return `<tr data-select="swap:${sw.requestId}" style="cursor:pointer">
+                <td>${sw.requestId}</td>
+                <td>${sh ? sh.workDate + " " + sh.startTime : sw.shiftId}</td>
+                <td>${userName(sw.ownerUserId)}</td>
+                <td><span class="badge ${sw.status}">${sw.status}</span></td>
+              </tr>`;
+            }).join("") : `<tr><td colspan="4" style="color:var(--muted)">No swap requests yet.</td></tr>`}
+          </tbody>
+        </table>`;
+    }
+
+    function renderDetail() {
+      const empty = document.getElementById("detailEmpty");
+      const body = document.getElementById("detailBody");
+      const sel = state.selected;
+      if (!sel.type) {
+        empty.hidden = false;
+        body.hidden = true;
+        return;
+      }
+      empty.hidden = true;
+      body.hidden = false;
+
+      if (sel.type === "shift") {
+        const shift = state.shifts.find(s => s.shiftId === sel.id);
+        const user = currentUser();
+        const activeSwap = state.swaps.find(sw => sw.shiftId === shift.shiftId && !["cancelled", "rejected", "completed"].includes(sw.status));
+        body.innerHTML = `
+          <div class="detail-row"><strong>Shift</strong> ${shift.shiftId}</div>
+          <div class="detail-row"><strong>Date</strong> ${shift.workDate}</div>
+          <div class="detail-row"><strong>Time</strong> ${shift.startTime} to ${shift.endTime}</div>
+          <div class="detail-row"><strong>Site</strong> ${siteLabel(shift.siteId)}</div>
+          <div class="detail-row"><strong>Owner</strong> ${userName(shift.ownerUserId)}</div>
+          <div class="detail-row"><strong>Status</strong> <span class="badge ${shift.status}">${shift.status.replace("_", " ")}</span></div>
+          ${!isManager() && shift.ownerUserId === user.userId && shift.status === "filled" && !activeSwap ? `
+            <div style="margin-top:12px">
+              <label for="reasonNote">Reason for swap</label><br>
+              <textarea id="reasonNote" rows="2" style="width:100%;margin:6px 0"></textarea>
+              <button type="button" id="postSwapBtn">Post swap request</button>
+            </div>` : ""}
+          ${activeSwap ? `<p style="margin-top:10px;font-size:0.88rem;color:var(--muted)">Linked swap ${activeSwap.requestId} is ${activeSwap.status}.</p>` : ""}`;
+
+        const btn = document.getElementById("postSwapBtn");
+        if (btn) {
+          btn.onclick = () => {
+            const reasonNote = document.getElementById("reasonNote").value.trim();
+            if (!reasonNote) {
+              showFlash("Please enter a reason. Empty submissions are blocked.");
+              return;
+            }
+            const requestId = "SW" + String(state.swaps.length + 1).padStart(2, "0");
+            state.swaps.push({
+              requestId,
+              shiftId: shift.shiftId,
+              ownerUserId: user.userId,
+              claimerUserId: null,
+              reasonNote,
+              status: "posted",
+              postedAt: new Date().toISOString(),
+              resolvedAt: null
+            });
+            shift.status = "swap_pending";
+            state.selected = { type: "swap", id: requestId };
+            saveState();
+            render();
+            showFlash("Swap request posted.");
+          };
+        }
+        return;
+      }
+
+      if (sel.type === "swap") {
+        const swap = state.swaps.find(s => s.requestId === sel.id);
+        const shift = state.shifts.find(s => s.shiftId === swap.shiftId);
+        const actions = allowedActionsForSwap(swap);
+        body.innerHTML = `
+          <div class="detail-row"><strong>Request</strong> ${swap.requestId}</div>
+          <div class="detail-row"><strong>Status</strong> <span class="badge ${swap.status}">${swap.status}</span></div>
+          <div class="detail-row"><strong>Owner</strong> ${userName(swap.ownerUserId)}</div>
+          <div class="detail-row"><strong>Claimer</strong> ${swap.claimerUserId ? userName(swap.claimerUserId) : "None yet"}</div>
+          <div class="detail-row"><strong>Shift</strong> ${shift.workDate} ${shift.startTime}-${shift.endTime} at ${siteLabel(shift.siteId)}</div>
+          <div class="detail-row"><strong>Reason</strong> ${swap.reasonNote}</div>
+          <div class="actions" style="margin-top:12px">
+            ${actions.map(a => `<button type="button" data-action="${a.id}" class="${a.id === "reject" || a.id === "cancel" ? "danger" : ""}">${a.label}</button>`).join("")}
+          </div>`;
+
+        body.querySelectorAll("[data-action]").forEach(btn => {
+          btn.onclick = () => runSwapAction(swap.requestId, btn.getAttribute("data-action"));
+        });
+      }
+    }
+
+    function runSwapAction(requestId, action) {
+      const swap = state.swaps.find(s => s.requestId === requestId);
+      const shift = state.shifts.find(s => s.shiftId === swap.shiftId);
+      const user = currentUser();
+
+      if (action === "claim") {
+        if (!canTransitionSwap(swap.status, "claimed")) return showFlash("Illegal transition: cannot claim from " + swap.status);
+        swap.status = "claimed";
+        swap.claimerUserId = user.userId;
+      } else if (action === "cancel") {
+        if (!canTransitionSwap(swap.status, "cancelled")) return showFlash("Illegal transition: cannot cancel from " + swap.status);
+        swap.status = "cancelled";
+        swap.resolvedAt = new Date().toISOString();
+        if (shift) shift.status = "filled";
+      } else if (action === "approve") {
+        if (!canTransitionSwap(swap.status, "approved")) return showFlash("Illegal transition: cannot approve from " + swap.status);
+        swap.status = "approved";
+      } else if (action === "reject") {
+        if (!canTransitionSwap(swap.status, "rejected")) return showFlash("Illegal transition: cannot reject from " + swap.status);
+        swap.status = "rejected";
+        swap.resolvedAt = new Date().toISOString();
+        swap.claimerUserId = null;
+        if (shift) shift.status = "filled";
+      } else if (action === "complete") {
+        if (!canTransitionSwap(swap.status, "completed")) return showFlash("Illegal transition: cannot complete from " + swap.status);
+        if (!swap.claimerUserId) return showFlash("Cannot complete without a claimer.");
+        swap.status = "completed";
+        swap.resolvedAt = new Date().toISOString();
+        if (shift) {
+          shift.ownerUserId = swap.claimerUserId;
+          shift.status = "filled";
+        }
+      }
+
+      saveState();
+      render();
+      showFlash("Action applied: " + action + ". New status: " + swap.status + ".");
+    }
+
+    function render() {
+      populateUsers();
+      renderLeft();
+      renderRight();
+      renderDetail();
+      document.querySelectorAll("[data-select]").forEach(row => {
+        row.onclick = () => {
+          const [type, id] = row.getAttribute("data-select").split(":");
+          state.selected = { type, id };
+          saveState();
+          renderDetail();
+        };
+      });
+    }
+
+    roleSelect.onchange = () => { state.selected = { type: null, id: null }; render(); };
+    userSelect.onchange = () => { state.selected = { type: null, id: null }; render(); };
+    document.getElementById("resetBtn").onclick = () => {
+      state = seedData();
+      saveState();
+      render();
+      showFlash("Sample data restored.");
+    };
+
+    render();
+  </script>
+</body>
+</html>
