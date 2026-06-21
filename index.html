@@ -139,7 +139,7 @@
   <footer>ShiftSwap Desk prototype. Ridhi 242950. MBIS4004 A2 Part 2. In-memory demo only.</footer>
 
   <script>
-    const STORAGE_KEY = "shiftswap_desk_v1";
+    const STORAGE_KEY = "shiftswap_desk_v2";
 
     const LEGAL_SWAP = {
       posted: ["claimed", "cancelled"],
@@ -167,7 +167,7 @@
           { shiftId: "SH01", siteId: "S1", ownerUserId: "U001", workDate: "2026-06-18", startTime: "08:00", endTime: "12:00", status: "filled" },
           { shiftId: "SH02", siteId: "S2", ownerUserId: "U002", workDate: "2026-06-19", startTime: "13:00", endTime: "17:00", status: "swap_pending" },
           { shiftId: "SH03", siteId: "S3", ownerUserId: "U003", workDate: "2026-06-20", startTime: "09:00", endTime: "13:00", status: "open" },
-          { shiftId: "SH04", siteId: "S1", ownerUserId: "U001", workDate: "2026-06-22", startTime: "14:00", endTime: "18:00", status: "filled" }
+          { shiftId: "SH04", siteId: "S1", ownerUserId: "U001", workDate: "2026-06-22", startTime: "14:00", endTime: "18:00", status: "swap_pending" }
         ],
         swaps: [
           {
@@ -179,9 +179,20 @@
             status: "claimed",
             postedAt: "2026-06-14T09:15:00",
             resolvedAt: null
+          },
+          {
+            requestId: "SW02",
+            shiftId: "SH04",
+            ownerUserId: "U001",
+            claimerUserId: null,
+            reasonNote: "Doctor appointment on Monday afternoon",
+            status: "posted",
+            postedAt: "2026-06-15T11:30:00",
+            resolvedAt: null
           }
         ],
-        selected: { type: null, id: null }
+        selected: { type: null, id: null },
+        activeUserId: "U001"
       };
     }
 
@@ -258,9 +269,16 @@
     function populateUsers() {
       const role = roleSelect.value;
       const list = state.users.filter(u => u.roleType === role);
+      const keepId = list.some(u => u.userId === state.activeUserId)
+        ? state.activeUserId
+        : (list[0] ? list[0].userId : null);
       userSelect.innerHTML = list.map(u =>
         `<option value="${u.userId}">${u.fullName}</option>`
       ).join("");
+      if (keepId) {
+        userSelect.value = keepId;
+        state.activeUserId = keepId;
+      }
     }
 
     function renderLeft() {
@@ -472,11 +490,7 @@
       showFlash("Action applied: " + action + ". New status: " + swap.status + ".");
     }
 
-    function render() {
-      populateUsers();
-      renderLeft();
-      renderRight();
-      renderDetail();
+    function bindRowClicks() {
       document.querySelectorAll("[data-select]").forEach(row => {
         row.onclick = () => {
           const [type, id] = row.getAttribute("data-select").split(":");
@@ -487,8 +501,30 @@
       });
     }
 
-    roleSelect.onchange = () => { state.selected = { type: null, id: null }; render(); };
-    userSelect.onchange = () => { state.selected = { type: null, id: null }; render(); };
+    function render() {
+      populateUsers();
+      renderLeft();
+      renderRight();
+      renderDetail();
+      bindRowClicks();
+    }
+
+    roleSelect.onchange = () => {
+      state.selected = { type: null, id: null };
+      const first = state.users.find(u => u.roleType === roleSelect.value);
+      state.activeUserId = first ? first.userId : null;
+      saveState();
+      render();
+    };
+    userSelect.onchange = () => {
+      state.activeUserId = userSelect.value;
+      state.selected = { type: null, id: null };
+      saveState();
+      renderLeft();
+      renderRight();
+      renderDetail();
+      bindRowClicks();
+    };
     document.getElementById("resetBtn").onclick = () => {
       state = seedData();
       saveState();
